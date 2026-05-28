@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Work+Sans:wght@600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #161a32;
+  background: #fbf8ff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: #fbf8ff;
+  color: #161a32;
+  font-family: "Atkinson Hyperlegible Next", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select {
+  min-height: 48px;
+}
+
+.record-card {
+  background: #ffffff;
+  border: 1px solid #bfc9c1;
+  border-radius: 0.5rem;
+}
+
+.record-card:active,
+.pressable:active {
+  transform: scale(0.98);
+}
+
+.scroll-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.focus-ring:focus {
+  outline: 2px solid #0f5238;
+  outline-offset: 2px;
+}
