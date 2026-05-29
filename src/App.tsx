@@ -125,7 +125,7 @@ function useOnlineStatus() {
   return online;
 }
 
-function useFarmData(refreshKey: number) {
+function useFarmData(refreshKey: number, enabled = true) {
   const [data, setData] = useState({
     batches: [] as Batch[],
     eggs: [] as EggRecord[],
@@ -147,6 +147,7 @@ function useFarmData(refreshKey: number) {
     queued: 0
   });
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     seedDatabase().then(async () => {
       const result = {
@@ -174,14 +175,74 @@ function useFarmData(refreshKey: number) {
     return () => {
       active = false;
     };
-  }, [refreshKey]);
+  }, [enabled, refreshKey]);
   return data;
 }
 
 const formatMoney = (value: number) => `KSh ${value.toLocaleString('en-KE')}`;
 const iconSize = 22;
+const authStorageKey = 'kuku_smart_device_passcode_v1';
 
-function TopBar({ route, onOpenMenu, onBack }: { route: { label: string }; onOpenMenu: () => void; onBack: () => void }) {
+type AuthRecord = {
+  salt: string;
+  hash: string;
+  iterations: number;
+};
+
+const authEncoder = new TextEncoder();
+
+function bytesToBase64(bytes: Uint8Array) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(value: string) {
+  const decoded = atob(value);
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+  return bytes;
+}
+
+async function derivePasscodeHash(passcode: string, salt: Uint8Array, iterations: number) {
+  const key = await crypto.subtle.importKey('raw', authEncoder.encode(passcode), 'PBKDF2', false, ['deriveBits']);
+  const saltBuffer = new ArrayBuffer(salt.byteLength);
+  new Uint8Array(saltBuffer).set(salt);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBuffer, iterations },
+    key,
+    256
+  );
+  return bytesToBase64(new Uint8Array(bits));
+}
+
+async function createAuthRecord(passcode: string): Promise<AuthRecord> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 210000;
+  return {
+    salt: bytesToBase64(salt),
+    hash: await derivePasscodeHash(passcode, salt, iterations),
+    iterations
+  };
+}
+
+async function verifyPasscode(passcode: string, record: AuthRecord) {
+  const hash = await derivePasscodeHash(passcode, base64ToBytes(record.salt), record.iterations);
+  return hash === record.hash;
+}
+
+function getStoredAuthRecord() {
+  const raw = localStorage.getItem(authStorageKey);
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw) as AuthRecord;
+  } catch {
+    localStorage.removeItem(authStorageKey);
+    return undefined;
+  }
+}
+
+function TopBar({ route, onOpenMenu, onBack, onLock }: { route: { label: string }; onOpenMenu: () => void; onBack: () => void; onLock: () => void }) {
   const isHome = route.label.includes('Dashboard') || route.label === 'Farmer Dashboard';
   return (
     <header className="fixed left-0 top-0 z-40 flex h-touch-target w-full items-center justify-between border-b border-outline-variant bg-surface px-margin-mobile transition-[left,width] duration-200 ease-out lg:left-72 lg:w-[calc(100%-18rem)]">
@@ -200,9 +261,14 @@ function TopBar({ route, onOpenMenu, onBack }: { route: { label: string }; onOpe
           <h1 className="font-heading text-xl font-bold text-primary">Kuku Smart</h1>
         </div>
       </div>
-      <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" aria-label="Notifications">
-        <Bell size={iconSize} />
-      </button>
+      <div className="flex items-center gap-1">
+        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" aria-label="Notifications">
+          <Bell size={iconSize} />
+        </button>
+        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" onClick={onLock} aria-label="Lock app">
+          <ShieldCheck size={iconSize} />
+        </button>
+      </div>
     </header>
   );
 }
@@ -944,12 +1010,102 @@ function Screen({ route, data, setCurrent, refresh, onToggleModule }: { route: {
   return <GenericList title={route.label} icon={<CalendarDays size={22} />} entry={liveEntry} items={data.tasks.map((task) => ({ title: task.title, meta: `${task.category} - ${task.dueDate}`, amount: task.priority, tone: task.priority === 'Urgent' ? 'red' : 'yellow' }))} />;
 }
 
+function SecurityGate({ mode, onUnlocked }: { mode: 'setup' | 'locked'; onUnlocked: () => void }) {
+  const [passcode, setPasscode] = useState('');
+  const [confirmPasscode, setConfirmPasscode] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const isSetup = mode === 'setup';
+
+  async function submit() {
+    setMessage('');
+    if (!crypto.subtle) {
+      setMessage('This browser cannot create a secure local passcode. Use HTTPS or localhost.');
+      return;
+    }
+    if (passcode.length < 6) {
+      setMessage('Use at least 6 characters.');
+      return;
+    }
+    if (isSetup && passcode !== confirmPasscode) {
+      setMessage('Passcodes do not match.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (isSetup) {
+        const record = await createAuthRecord(passcode);
+        localStorage.setItem(authStorageKey, JSON.stringify(record));
+        onUnlocked();
+        return;
+      }
+      const record = getStoredAuthRecord();
+      if (record && await verifyPasscode(passcode, record)) {
+        onUnlocked();
+        return;
+      }
+      setMessage('Incorrect passcode.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-margin-mobile font-body text-on-background">
+      <form
+        className="w-full max-w-md rounded-lg border border-outline-variant bg-surface p-stack-lg shadow-[0_4px_16px_rgba(22,26,50,0.12)]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <div className="mb-stack-lg flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+            <ShieldCheck size={24} />
+          </div>
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-primary">{isSetup ? 'Secure Kuku Smart' : 'Unlock Kuku Smart'}</h1>
+            <p className="text-sm text-on-surface-variant">{isSetup ? 'Create a local passcode for this device.' : 'Enter the local device passcode.'}</p>
+          </div>
+        </div>
+        <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+          Passcode
+          <input
+            value={passcode}
+            onChange={(event) => setPasscode(event.target.value)}
+            type="password"
+            autoComplete={isSetup ? 'new-password' : 'current-password'}
+            className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+        </label>
+        {isSetup && (
+          <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+            Confirm passcode
+            <input
+              value={confirmPasscode}
+              onChange={(event) => setConfirmPasscode(event.target.value)}
+              type="password"
+              autoComplete="new-password"
+              className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+          </label>
+        )}
+        {message && <p className="mb-stack-md rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm font-bold text-error">{message}</p>}
+        <button disabled={busy} className="focus-ring flex h-14 w-full items-center justify-center gap-2 rounded-full bg-primary font-bold text-on-primary disabled:opacity-60">
+          <ShieldCheck size={20} /> {busy ? 'Checking...' : isSetup ? 'Create Passcode' : 'Unlock'}
+        </button>
+      </form>
+    </main>
+  );
+}
+
 export default function App() {
   const [current, setCurrent] = useState<RouteKey>('farmer_dashboard_1');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [authMode, setAuthMode] = useState<'checking' | 'setup' | 'locked' | 'unlocked'>('checking');
   const online = useOnlineStatus();
-  const data = useFarmData(refreshKey);
+  const data = useFarmData(refreshKey, authMode === 'unlocked');
   const route = useMemo(() => routes.find((r) => r.key === current) ?? routes[0], [current]);
   const activeModuleIds = useMemo(
     () => data.modules.length > 0 ? data.modules.filter((module) => module.active).map((module) => module.moduleId) : ['core'],
@@ -960,6 +1116,9 @@ export default function App() {
       setCurrent('farmer_dashboard_1');
     }
   }, [activeModuleIds, data.modules.length, route]);
+  useEffect(() => {
+    setAuthMode(getStoredAuthRecord() ? 'locked' : 'setup');
+  }, []);
   async function toggleModuleActivation(activation: ModuleActivation) {
     if (!activation.id || activation.moduleId === 'core') return;
     const updated: ModuleActivation = {
@@ -972,10 +1131,20 @@ export default function App() {
     await queueChange('module_activations', activation.id, 'update', updated);
     setRefreshKey((key) => key + 1);
   }
+  if (authMode === 'checking') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background font-body text-on-background">
+        <p className="font-bold text-primary">Loading secure session...</p>
+      </main>
+    );
+  }
+  if (authMode !== 'unlocked') {
+    return <SecurityGate mode={authMode} onUnlocked={() => setAuthMode('unlocked')} />;
+  }
   return (
     <div className="min-h-screen bg-background pb-28 font-body text-on-background lg:pb-0">
       <DesktopSidebar current={current} setCurrent={setCurrent} activeModuleIds={activeModuleIds} />
-      <TopBar route={route} onOpenMenu={() => setDrawerOpen(true)} onBack={() => setCurrent('farmer_dashboard_1')} />
+      <TopBar route={route} onOpenMenu={() => setDrawerOpen(true)} onBack={() => setCurrent('farmer_dashboard_1')} onLock={() => setAuthMode('locked')} />
       <ScreenDrawer open={drawerOpen} current={current} setCurrent={setCurrent} activeModuleIds={activeModuleIds} onClose={() => setDrawerOpen(false)} />
       <main className="w-full px-margin-mobile pt-20 transition-[margin,width] duration-200 ease-out lg:ml-72 lg:w-[calc(100%-18rem)]">
         <div className="mx-auto max-w-5xl">
