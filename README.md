@@ -25,7 +25,9 @@ After login, use the top-bar settings icon to open **Farm Settings**. The **User
 
 New tenants start with Core only. Paid modules are activated from **Farm Settings** by entering the payment reference for the requested module.
 
-Admins use the **Admin** tab on the login screen. The first admin creates an admin account with an Admin ID and password; returning admins log in with that Admin ID and password.
+Admins use the **Admin** tab on the login screen. The first admin creates an admin account with an Admin ID, email, and password; returning admins log in with that Admin ID and password.
+
+If a password is forgotten, use the **Forgot password?** link on the login screen. Admin recovery requires the registered admin email, and tenant recovery requires the registered tenant email.
 
 The admin account opens a **Superadmin Module** where admins can create businesses, create SaaS-style packages, allocate subscriptions, record offline payment references, and deactivate/reactivate businesses.
 

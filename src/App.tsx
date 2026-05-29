@@ -299,13 +299,13 @@ async function derivePasswordHash(password: string, salt: Uint8Array, iterations
   return bytesToBase64(new Uint8Array(bits));
 }
 
-async function createAuthRecord(tenantCode: string, username: string, password: string): Promise<AuthRecord> {
+async function createAuthRecord(tenantCode: string, username: string, email: string, password: string): Promise<AuthRecord> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iterations = 210000;
   return {
     tenantCode: normalizeTenantCode(tenantCode),
     username: normalizeUsername(username),
-    email: '',
+    email: email.trim(),
     accountIcon: 'sprout',
     salt: bytesToBase64(salt),
     passwordHash: await derivePasswordHash(password, salt, iterations),
@@ -1770,6 +1770,8 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
   const [adminEmail, setAdminEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [tenantEmail, setTenantEmail] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const isAdmin = activeRole === 'admin';
@@ -1798,16 +1800,80 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
       setMessage('Enter a valid admin email address.');
       return;
     }
-    if (password.length < 8) {
-      setMessage('Use a password with at least 8 characters.');
+    if (!isAdmin && isSetup && tenantEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tenantEmail.trim())) {
+      setMessage('Enter a valid email address.');
       return;
     }
-    if (isSetup && password !== confirmPassword) {
-      setMessage('Passwords do not match.');
-      return;
+    if (recoveryMode) {
+      if (!password) {
+        setMessage('Enter a new password.');
+        return;
+      }
+      if (password.length < 8) {
+        setMessage('Use a password with at least 8 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setMessage('Passwords do not match.');
+        return;
+      }
+      if (isAdmin && !adminEmail.trim()) {
+        setMessage('Enter your registered admin email.');
+        return;
+      }
+      if (!isAdmin && !tenantEmail.trim()) {
+        setMessage('Enter your registered tenant email.');
+        return;
+      }
+    } else {
+      if (password.length < 8) {
+        setMessage('Use a password with at least 8 characters.');
+        return;
+      }
+      if (isSetup && password !== confirmPassword) {
+        setMessage('Passwords do not match.');
+        return;
+      }
     }
     setBusy(true);
     try {
+      if (recoveryMode) {
+        if (isAdmin) {
+          const record = getStoredAdminAuthRecord();
+          if (!record) {
+            setMessage('No admin account found.');
+            return;
+          }
+          if (normalizeAdminId(adminId) !== record.adminId || adminEmail.trim().toLowerCase() !== (record.email ?? '').trim().toLowerCase()) {
+            setMessage('Admin ID or email does not match.');
+            return;
+          }
+          const credentials = await createPasswordCredentials(password);
+          storeAdminAuthRecord({ ...record, ...credentials });
+          onAdminAuthenticated();
+          return;
+        }
+
+        const record = getStoredAuthRecord();
+        if (!record) {
+          setMessage('No tenant account found.');
+          return;
+        }
+        if (
+          normalizeTenantCode(tenantCode) !== record.tenantCode ||
+          normalizeUsername(username) !== record.username ||
+          !(record.email ?? '').trim() ||
+          tenantEmail.trim().toLowerCase() !== (record.email ?? '').trim().toLowerCase()
+        ) {
+          setMessage('Tenant login or email does not match.');
+          return;
+        }
+        const credentials = await createPasswordCredentials(password);
+        storeAuthRecord({ ...record, ...credentials });
+        onTenantAuthenticated();
+        return;
+      }
+
       if (isAdmin) {
         if (isSetup) {
           const record = await createAdminAuthRecord(adminId, adminEmail, password);
@@ -1824,7 +1890,7 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
         return;
       }
       if (isSetup) {
-        const record = await createAuthRecord(tenantCode, username, password);
+        const record = await createAuthRecord(tenantCode, username, tenantEmail, password);
         storeAuthRecord(record);
         onTenantAuthenticated();
         return;
@@ -1859,8 +1925,34 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
           </div>
         </div>
         <div className="mb-stack-md grid grid-cols-2 gap-2 rounded-lg bg-surface-container p-1">
-          <button type="button" onClick={() => { setActiveRole('tenant'); setMessage(''); }} className={`h-11 rounded-md font-bold ${!isAdmin ? 'bg-white text-primary' : 'text-on-surface-variant'}`}>Tenant</button>
-          <button type="button" onClick={() => { setActiveRole('admin'); setMessage(''); }} className={`h-11 rounded-md font-bold ${isAdmin ? 'bg-white text-primary' : 'text-on-surface-variant'}`}>Admin</button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveRole('tenant');
+              setRecoveryMode(false);
+              setMessage('');
+              setPassword('');
+              setConfirmPassword('');
+              setTenantEmail('');
+            }}
+            className={`h-11 rounded-md font-bold ${!isAdmin ? 'bg-white text-primary' : 'text-on-surface-variant'}`}
+          >
+            Tenant
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveRole('admin');
+              setRecoveryMode(false);
+              setMessage('');
+              setPassword('');
+              setConfirmPassword('');
+              setAdminEmail('');
+            }}
+            className={`h-11 rounded-md font-bold ${isAdmin ? 'bg-white text-primary' : 'text-on-surface-variant'}`}
+          >
+            Admin
+          </button>
         </div>
         {isAdmin ? (
           <>
@@ -1874,9 +1966,9 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
                 className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </label>
-            {isSetup && (
+            {(isSetup || recoveryMode) && (
               <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
-                Admin email
+                {recoveryMode ? 'Registered admin email' : 'Admin email'}
                 <input
                   value={adminEmail}
                   onChange={(event) => setAdminEmail(event.target.value)}
@@ -1909,19 +2001,31 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
                 className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </label>
+            {(isSetup || recoveryMode) && (
+              <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+                {isSetup ? 'Email address (optional)' : 'Registered email'}
+                <input
+                  value={tenantEmail}
+                  onChange={(event) => setTenantEmail(event.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </label>
+            )}
           </>
         )}
         <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
-          Password
+          {recoveryMode ? 'New password' : 'Password'}
           <input
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             type="password"
-            autoComplete={isSetup ? 'new-password' : 'current-password'}
+            autoComplete={recoveryMode || isSetup ? 'new-password' : 'current-password'}
             className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
           />
         </label>
-        {isSetup && (
+        {(isSetup || recoveryMode) && (
           <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
             Confirm password
             <input
@@ -1933,9 +2037,40 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
             />
           </label>
         )}
+        {!isSetup && (
+          <div className="mb-stack-md text-right">
+            {recoveryMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryMode(false);
+                  setMessage('');
+                  setPassword('');
+                  setConfirmPassword('');
+                }}
+                className="text-sm font-bold text-on-surface-variant underline"
+              >
+                Back to login
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryMode(true);
+                  setMessage('');
+                  setPassword('');
+                  setConfirmPassword('');
+                }}
+                className="text-sm font-bold text-primary underline"
+              >
+                Forgot password?
+              </button>
+            )}
+          </div>
+        )}
         {message && <p className="mb-stack-md rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm font-bold text-error">{message}</p>}
         <button disabled={busy} className="focus-ring flex h-14 w-full items-center justify-center gap-2 rounded-full bg-primary font-bold text-on-primary disabled:opacity-60">
-          <ShieldCheck size={20} /> {busy ? 'Checking...' : isAdmin ? (isSetup ? 'Create Admin Account' : 'Admin Log In') : isSetup ? 'Create Tenant Account' : 'Log In'}
+          <ShieldCheck size={20} /> {busy ? 'Checking...' : recoveryMode ? 'Reset Password' : isAdmin ? (isSetup ? 'Create Admin Account' : 'Admin Log In') : isSetup ? 'Create Tenant Account' : 'Log In'}
         </button>
       </form>
     </main>
