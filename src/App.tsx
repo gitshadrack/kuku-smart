@@ -183,14 +183,28 @@ function useFarmData(refreshKey: number, enabled = true) {
 const formatMoney = (value: number) => `KSh ${value.toLocaleString('en-KE')}`;
 const iconSize = 22;
 const authStorageKey = 'kuku_smart_local_login_v1';
+const defaultTenantCode = 'NYERI-KUKU-001';
 
 type AuthRecord = {
+  tenantCode: string;
   username: string;
+  email?: string;
+  accountIcon?: AccountIconKey;
   salt: string;
   passwordHash: string;
   iterations: number;
   createdAt: string;
+  updatedAt?: string;
 };
+
+type AccountIconKey = 'sprout' | 'shield' | 'users' | 'wallet';
+
+const accountIconOptions: { key: AccountIconKey; label: string }[] = [
+  { key: 'sprout', label: 'Farm' },
+  { key: 'shield', label: 'Secure' },
+  { key: 'users', label: 'Team' },
+  { key: 'wallet', label: 'Finance' }
+];
 
 const authEncoder = new TextEncoder();
 
@@ -211,6 +225,10 @@ function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
 }
 
+function normalizeTenantCode(tenantCode: string) {
+  return tenantCode.trim().toUpperCase();
+}
+
 async function derivePasswordHash(password: string, salt: Uint8Array, iterations: number) {
   const key = await crypto.subtle.importKey('raw', authEncoder.encode(password), 'PBKDF2', false, ['deriveBits']);
   const saltBuffer = new ArrayBuffer(salt.byteLength);
@@ -223,11 +241,14 @@ async function derivePasswordHash(password: string, salt: Uint8Array, iterations
   return bytesToBase64(new Uint8Array(bits));
 }
 
-async function createAuthRecord(username: string, password: string): Promise<AuthRecord> {
+async function createAuthRecord(tenantCode: string, username: string, password: string): Promise<AuthRecord> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iterations = 210000;
   return {
+    tenantCode: normalizeTenantCode(tenantCode),
     username: normalizeUsername(username),
+    email: '',
+    accountIcon: 'sprout',
     salt: bytesToBase64(salt),
     passwordHash: await derivePasswordHash(password, salt, iterations),
     iterations,
@@ -235,7 +256,8 @@ async function createAuthRecord(username: string, password: string): Promise<Aut
   };
 }
 
-async function verifyLogin(username: string, password: string, record: AuthRecord) {
+async function verifyLogin(tenantCode: string, username: string, password: string, record: AuthRecord) {
+  if (normalizeTenantCode(tenantCode) !== record.tenantCode) return false;
   if (normalizeUsername(username) !== record.username) return false;
   const passwordHash = await derivePasswordHash(password, base64ToBytes(record.salt), record.iterations);
   return passwordHash === record.passwordHash;
@@ -246,7 +268,7 @@ function getStoredAuthRecord() {
   if (!raw) return undefined;
   try {
     const record = JSON.parse(raw) as AuthRecord;
-    if (!record.username || !record.passwordHash || !record.salt || !record.iterations) {
+    if (!record.tenantCode || !record.username || !record.passwordHash || !record.salt || !record.iterations) {
       localStorage.removeItem(authStorageKey);
       return undefined;
     }
@@ -255,6 +277,27 @@ function getStoredAuthRecord() {
     localStorage.removeItem(authStorageKey);
     return undefined;
   }
+}
+
+function storeAuthRecord(record: AuthRecord) {
+  localStorage.setItem(authStorageKey, JSON.stringify({ ...record, updatedAt: new Date().toISOString() }));
+}
+
+async function createPasswordCredentials(password: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 210000;
+  return {
+    salt: bytesToBase64(salt),
+    passwordHash: await derivePasswordHash(password, salt, iterations),
+    iterations
+  };
+}
+
+function accountIconFor(key: AccountIconKey | undefined, size = 22) {
+  if (key === 'shield') return <ShieldCheck size={size} />;
+  if (key === 'users') return <Users size={size} />;
+  if (key === 'wallet') return <Wallet size={size} />;
+  return <Sprout size={size} />;
 }
 
 function TopBar({ route, onOpenMenu, onBack, onLogout }: { route: { label: string }; onOpenMenu: () => void; onBack: () => void; onLogout: () => void }) {
@@ -1026,6 +1069,7 @@ function Screen({ route, data, setCurrent, refresh, onToggleModule }: { route: {
 }
 
 function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthenticated: () => void }) {
+  const [tenantCode, setTenantCode] = useState(defaultTenantCode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -1037,6 +1081,10 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
     setMessage('');
     if (!crypto.subtle) {
       setMessage('This browser cannot create a secure local login. Use HTTPS or localhost.');
+      return;
+    }
+    if (normalizeTenantCode(tenantCode).length < 5) {
+      setMessage('Enter a valid tenant code.');
       return;
     }
     if (normalizeUsername(username).length < 3) {
@@ -1054,17 +1102,17 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
     setBusy(true);
     try {
       if (isSetup) {
-        const record = await createAuthRecord(username, password);
+        const record = await createAuthRecord(tenantCode, username, password);
         localStorage.setItem(authStorageKey, JSON.stringify(record));
         onAuthenticated();
         return;
       }
       const record = getStoredAuthRecord();
-      if (record && await verifyLogin(username, password, record)) {
+      if (record && await verifyLogin(tenantCode, username, password, record)) {
         onAuthenticated();
         return;
       }
-      setMessage('Incorrect username or password.');
+      setMessage('Incorrect tenant, username, or password.');
     } finally {
       setBusy(false);
     }
@@ -1084,10 +1132,20 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
             <ShieldCheck size={24} />
           </div>
           <div>
-            <h1 className="font-heading text-2xl font-bold text-primary">{isSetup ? 'Create Login' : 'Log In'}</h1>
-            <p className="text-sm text-on-surface-variant">{isSetup ? 'Set up the local owner account for this device.' : 'Enter your local account credentials.'}</p>
+            <h1 className="font-heading text-2xl font-bold text-primary">{isSetup ? 'Create Tenant Login' : 'Tenant Login'}</h1>
+            <p className="text-sm text-on-surface-variant">{isSetup ? 'Set up the tenant account for this device.' : 'Enter tenant account credentials.'}</p>
           </div>
         </div>
+        <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+          Tenant code
+          <input
+            value={tenantCode}
+            onChange={(event) => setTenantCode(event.target.value)}
+            type="text"
+            autoComplete="organization"
+            className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal uppercase outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+        </label>
         <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
           Username
           <input
@@ -1122,7 +1180,7 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
         )}
         {message && <p className="mb-stack-md rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm font-bold text-error">{message}</p>}
         <button disabled={busy} className="focus-ring flex h-14 w-full items-center justify-center gap-2 rounded-full bg-primary font-bold text-on-primary disabled:opacity-60">
-          <ShieldCheck size={20} /> {busy ? 'Checking...' : isSetup ? 'Create Account' : 'Log In'}
+          <ShieldCheck size={20} /> {busy ? 'Checking...' : isSetup ? 'Create Tenant Account' : 'Log In'}
         </button>
       </form>
     </main>

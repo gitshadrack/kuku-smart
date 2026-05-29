@@ -12,7 +12,7 @@ Current app characteristics:
 - Styling: Tailwind CSS and the design system in `DESIGN.md`.
 - Local storage: IndexedDB through Dexie.
 - PWA: `vite-plugin-pwa` with production service worker generation.
-- Security baseline: local username/password login gate, PBKDF2 password hashing, production-only service worker registration, zero known npm audit vulnerabilities at time of writing.
+- Security baseline: local tenant-code plus username/password login gate, PBKDF2 password hashing, production-only service worker registration, zero known npm audit vulnerabilities at time of writing.
 
 ## 2. Repository Structure
 
@@ -70,7 +70,7 @@ Development notes:
 
 - The dev server is bound to `127.0.0.1` to avoid exposing it on the local network.
 - The PWA service worker is disabled in development to prevent stale development caches.
-- On first load, create a local username/password account. The password hash is stored in browser `localStorage`; farm records are stored in IndexedDB.
+- On first load, create a local tenant account with tenant code, username, and password. The password hash is stored in browser `localStorage`; farm records are stored in IndexedDB.
 
 ## 5. Feature Development Workflow
 
@@ -128,7 +128,7 @@ Before a feature can ship, it must satisfy these requirements:
 Current local security controls:
 
 - PBKDF2 password hashing with per-account salt.
-- Local username/password account setup and login screen.
+- Local tenant-code plus username/password account setup and login screen.
 - Manual logout button in the top bar.
 - IndexedDB loading delayed until login succeeds.
 - Vite/PWA dev service worker disabled.
@@ -168,14 +168,14 @@ npm.cmd run test:e2e
 Manual smoke test:
 
 1. Open the app on `http://127.0.0.1:5173/`.
-2. Create a local username/password account.
+2. Create a local tenant account using tenant code, username, and password.
 3. Confirm the dashboard loads.
 4. Add a sample batch record.
 5. Add a sample health record.
 6. Add a sample sales record.
 7. Confirm queued sync count changes.
 8. Log out from the top bar.
-9. Log in with the username and password.
+9. Log in with tenant code, username, and password.
 10. Confirm records still load.
 11. Toggle airplane/offline mode and confirm the offline banner changes.
 12. Reload the app and confirm the login screen appears.
@@ -223,7 +223,7 @@ Complete this checklist before declaring a release candidate shippable.
 - Mobile layout checked at common phone widths.
 - Desktop layout checked with sidebar navigation.
 - Forms save expected records.
-- Local account setup and login work.
+- Local tenant account setup and login work.
 - Logout button works.
 - Offline mode works after production build.
 - PWA manifest loads.

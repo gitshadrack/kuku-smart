@@ -15,6 +15,12 @@ Open:
 http://127.0.0.1:5173/
 ```
 
+On first launch, create the local tenant login. The sample tenant code is:
+
+```text
+NYERI-KUKU-001
+```
+
 ## Build
 
 ```powershell
