@@ -25,6 +25,8 @@ After login, open **Farm Settings** to edit the user account email, account icon
 
 New tenants start with Core only. Paid modules are activated from **Farm Settings** by entering the payment reference for the requested module.
 
+Admins use the **Admin** tab on the login screen. The first admin creates an admin account with an Admin ID and password; returning admins log in with that Admin ID and password.
+
 ## Build
 
 ```powershell

@@ -183,6 +183,7 @@ function useFarmData(refreshKey: number, enabled = true) {
 const formatMoney = (value: number) => `KSh ${value.toLocaleString('en-KE')}`;
 const iconSize = 22;
 const authStorageKey = 'kuku_smart_local_login_v1';
+const adminAuthStorageKey = 'kuku_smart_admin_login_v1';
 const defaultTenantCode = 'NYERI-KUKU-001';
 
 type AuthRecord = {
@@ -190,6 +191,16 @@ type AuthRecord = {
   username: string;
   email?: string;
   accountIcon?: AccountIconKey;
+  salt: string;
+  passwordHash: string;
+  iterations: number;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+type AdminAuthRecord = {
+  adminId: string;
+  email?: string;
   salt: string;
   passwordHash: string;
   iterations: number;
@@ -225,6 +236,10 @@ function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
 }
 
+function normalizeAdminId(adminId: string) {
+  return adminId.trim().toLowerCase();
+}
+
 function normalizeTenantCode(tenantCode: string) {
   return tenantCode.trim().toUpperCase();
 }
@@ -256,9 +271,28 @@ async function createAuthRecord(tenantCode: string, username: string, password: 
   };
 }
 
+async function createAdminAuthRecord(adminId: string, email: string, password: string): Promise<AdminAuthRecord> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 210000;
+  return {
+    adminId: normalizeAdminId(adminId),
+    email: email.trim(),
+    salt: bytesToBase64(salt),
+    passwordHash: await derivePasswordHash(password, salt, iterations),
+    iterations,
+    createdAt: new Date().toISOString()
+  };
+}
+
 async function verifyLogin(tenantCode: string, username: string, password: string, record: AuthRecord) {
   if (normalizeTenantCode(tenantCode) !== record.tenantCode) return false;
   if (normalizeUsername(username) !== record.username) return false;
+  const passwordHash = await derivePasswordHash(password, base64ToBytes(record.salt), record.iterations);
+  return passwordHash === record.passwordHash;
+}
+
+async function verifyAdminLogin(adminId: string, password: string, record: AdminAuthRecord) {
+  if (normalizeAdminId(adminId) !== record.adminId) return false;
   const passwordHash = await derivePasswordHash(password, base64ToBytes(record.salt), record.iterations);
   return passwordHash === record.passwordHash;
 }
@@ -279,8 +313,28 @@ function getStoredAuthRecord() {
   }
 }
 
+function getStoredAdminAuthRecord() {
+  const raw = localStorage.getItem(adminAuthStorageKey);
+  if (!raw) return undefined;
+  try {
+    const record = JSON.parse(raw) as AdminAuthRecord;
+    if (!record.adminId || !record.passwordHash || !record.salt || !record.iterations) {
+      localStorage.removeItem(adminAuthStorageKey);
+      return undefined;
+    }
+    return record;
+  } catch {
+    localStorage.removeItem(adminAuthStorageKey);
+    return undefined;
+  }
+}
+
 function storeAuthRecord(record: AuthRecord) {
   localStorage.setItem(authStorageKey, JSON.stringify({ ...record, updatedAt: new Date().toISOString() }));
+}
+
+function storeAdminAuthRecord(record: AdminAuthRecord) {
+  localStorage.setItem(adminAuthStorageKey, JSON.stringify({ ...record, updatedAt: new Date().toISOString() }));
 }
 
 async function createPasswordCredentials(password: string) {
@@ -1269,14 +1323,84 @@ function Screen({ route, data, setCurrent, refresh, onActivateModule }: { route:
   return <GenericList title={route.label} icon={<CalendarDays size={22} />} entry={liveEntry} items={data.tasks.map((task) => ({ title: task.title, meta: `${task.category} - ${task.dueDate}`, amount: task.priority, tone: task.priority === 'Urgent' ? 'red' : 'yellow' }))} />;
 }
 
-function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthenticated: () => void }) {
+function AdminConsole({ data, onLogout }: { data: ReturnType<typeof useFarmData>; onLogout: () => void }) {
+  const admin = getStoredAdminAuthRecord();
+  const activeModules = data.modules.filter((module) => module.active).length;
+  const paidModules = data.modules.filter((module) => module.paymentReference).length;
+  const totalPaid = data.modules.reduce((sum, module) => sum + (module.amountPaid ?? 0), 0);
+
+  return (
+    <div className="min-h-screen bg-background font-body text-on-background">
+      <header className="sticky top-0 z-40 flex h-touch-target items-center justify-between border-b border-outline-variant bg-surface px-margin-mobile">
+        <div className="flex items-center gap-2">
+          <Settings className="text-primary" size={24} />
+          <div>
+            <h1 className="font-heading text-xl font-bold text-primary">Admin Console</h1>
+            <p className="text-xs font-bold uppercase text-on-surface-variant">{admin?.adminId ?? 'admin'}</p>
+          </div>
+        </div>
+        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" onClick={onLogout} aria-label="Admin log out">
+          <LogOut size={iconSize} />
+        </button>
+      </header>
+      <main className="mx-auto max-w-5xl px-margin-mobile py-stack-lg">
+        <TitleBlock title="Tenant Oversight" chips={[data.tenant?.code ?? defaultTenantCode, `${activeModules} Active Modules`, formatMoney(totalPaid)]} />
+        <section className="mb-stack-lg grid gap-gutter-mobile md:grid-cols-3">
+          <StatCard icon={<Users size={20} />} label="Tenant" value={data.tenant?.name ?? 'No tenant'} note={data.tenant?.county ?? 'Not set'} />
+          <StatCard icon={<ShieldCheck size={20} />} label="Modules" value={`${activeModules}/${moduleCatalog.length}`} note={`${paidModules} paid`} tone="secondary" />
+          <StatCard icon={<Wallet size={20} />} label="Payments" value={formatMoney(totalPaid)} note="Recorded locally" tone="tertiary" />
+        </section>
+        <section className="record-card mb-stack-lg p-stack-md">
+          <h2 className="mb-stack-md font-heading text-xl font-semibold text-primary">Tenant Profile</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Metric label="Farm" value={data.tenant?.name ?? 'No active tenant'} />
+            <Metric label="Tenant Code" value={data.tenant?.code ?? 'Not assigned'} />
+            <Metric label="County" value={data.tenant?.county ?? 'Not set'} />
+            <Metric label="Owner" value={data.tenant?.ownerName ?? 'Not set'} />
+          </div>
+        </section>
+        <section>
+          <SectionHeader title="Module Payments" />
+          <div className="space-y-stack-sm">
+            {moduleCatalog.map((module) => {
+              const activation = data.modules.find((item) => item.moduleId === module.moduleId);
+              const active = activation?.active ?? module.defaultActive;
+              return (
+                <div key={module.moduleId} className="record-card grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+                  <div>
+                    <h3 className="font-bold">{module.label}</h3>
+                    <p className="text-sm text-on-surface-variant">
+                      {module.price === 0 ? 'Included core module' : `${formatMoney(module.price)} requested payment`}
+                    </p>
+                    {activation?.paymentReference && <p className="mt-1 text-xs font-bold text-primary">Reference: {activation.paymentReference}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Chip tone={active ? 'green' : 'plain'}>{active ? 'Active' : 'Inactive'}</Chip>
+                    {activation?.amountPaid ? <Chip tone="yellow">{formatMoney(activation.amountPaid)}</Chip> : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode: 'setup' | 'login'; onTenantAuthenticated: () => void; onAdminAuthenticated: () => void }) {
+  const [activeRole, setActiveRole] = useState<'tenant' | 'admin'>('tenant');
   const [tenantCode, setTenantCode] = useState(defaultTenantCode);
   const [username, setUsername] = useState('');
+  const [adminId, setAdminId] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const isSetup = mode === 'setup';
+  const isAdmin = activeRole === 'admin';
+  const adminExists = Boolean(getStoredAdminAuthRecord());
+  const isSetup = isAdmin ? !adminExists : mode === 'setup';
 
   async function submit() {
     setMessage('');
@@ -1284,12 +1408,20 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
       setMessage('This browser cannot create a secure local login. Use HTTPS or localhost.');
       return;
     }
-    if (normalizeTenantCode(tenantCode).length < 5) {
+    if (isAdmin && normalizeAdminId(adminId).length < 3) {
+      setMessage('Use an admin ID with at least 3 characters.');
+      return;
+    }
+    if (!isAdmin && normalizeTenantCode(tenantCode).length < 5) {
       setMessage('Enter a valid tenant code.');
       return;
     }
-    if (normalizeUsername(username).length < 3) {
+    if (!isAdmin && normalizeUsername(username).length < 3) {
       setMessage('Use a username with at least 3 characters.');
+      return;
+    }
+    if (isAdmin && isSetup && adminEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail.trim())) {
+      setMessage('Enter a valid admin email address.');
       return;
     }
     if (password.length < 8) {
@@ -1302,15 +1434,30 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
     }
     setBusy(true);
     try {
+      if (isAdmin) {
+        if (isSetup) {
+          const record = await createAdminAuthRecord(adminId, adminEmail, password);
+          storeAdminAuthRecord(record);
+          onAdminAuthenticated();
+          return;
+        }
+        const record = getStoredAdminAuthRecord();
+        if (record && await verifyAdminLogin(adminId, password, record)) {
+          onAdminAuthenticated();
+          return;
+        }
+        setMessage('Incorrect admin ID or password.');
+        return;
+      }
       if (isSetup) {
         const record = await createAuthRecord(tenantCode, username, password);
         storeAuthRecord(record);
-        onAuthenticated();
+        onTenantAuthenticated();
         return;
       }
       const record = getStoredAuthRecord();
       if (record && await verifyLogin(tenantCode, username, password, record)) {
-        onAuthenticated();
+        onTenantAuthenticated();
         return;
       }
       setMessage('Incorrect tenant, username, or password.');
@@ -1330,33 +1477,66 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
       >
         <div className="mb-stack-lg flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary">
-            <ShieldCheck size={24} />
+            {isAdmin ? <Settings size={24} /> : <ShieldCheck size={24} />}
           </div>
           <div>
-            <h1 className="font-heading text-2xl font-bold text-primary">{isSetup ? 'Create Tenant Login' : 'Tenant Login'}</h1>
-            <p className="text-sm text-on-surface-variant">{isSetup ? 'Set up the tenant account for this device.' : 'Enter tenant account credentials.'}</p>
+            <h1 className="font-heading text-2xl font-bold text-primary">{isAdmin ? (isSetup ? 'Create Admin Login' : 'Admin Login') : (isSetup ? 'Create Tenant Login' : 'Tenant Login')}</h1>
+            <p className="text-sm text-on-surface-variant">{isAdmin ? 'Use the admin account for system oversight.' : isSetup ? 'Set up the tenant account for this device.' : 'Enter tenant account credentials.'}</p>
           </div>
         </div>
-        <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
-          Tenant code
-          <input
-            value={tenantCode}
-            onChange={(event) => setTenantCode(event.target.value)}
-            type="text"
-            autoComplete="organization"
-            className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal uppercase outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
-        </label>
-        <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
-          Username
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            type="text"
-            autoComplete={isSetup ? 'username' : 'username'}
-            className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
-        </label>
+        <div className="mb-stack-md grid grid-cols-2 gap-2 rounded-lg bg-surface-container p-1">
+          <button type="button" onClick={() => { setActiveRole('tenant'); setMessage(''); }} className={`h-11 rounded-md font-bold ${!isAdmin ? 'bg-white text-primary' : 'text-on-surface-variant'}`}>Tenant</button>
+          <button type="button" onClick={() => { setActiveRole('admin'); setMessage(''); }} className={`h-11 rounded-md font-bold ${isAdmin ? 'bg-white text-primary' : 'text-on-surface-variant'}`}>Admin</button>
+        </div>
+        {isAdmin ? (
+          <>
+            <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+              Admin ID
+              <input
+                value={adminId}
+                onChange={(event) => setAdminId(event.target.value)}
+                type="text"
+                autoComplete="username"
+                className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+            </label>
+            {isSetup && (
+              <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+                Admin email
+                <input
+                  value={adminEmail}
+                  onChange={(event) => setAdminEmail(event.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </label>
+            )}
+          </>
+        ) : (
+          <>
+            <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+              Tenant code
+              <input
+                value={tenantCode}
+                onChange={(event) => setTenantCode(event.target.value)}
+                type="text"
+                autoComplete="organization"
+                className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal uppercase outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+            </label>
+            <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
+              Username
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                type="text"
+                autoComplete={isSetup ? 'username' : 'username'}
+                className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+            </label>
+          </>
+        )}
         <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
           Password
           <input
@@ -1381,7 +1561,7 @@ function LoginGate({ mode, onAuthenticated }: { mode: 'setup' | 'login'; onAuthe
         )}
         {message && <p className="mb-stack-md rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm font-bold text-error">{message}</p>}
         <button disabled={busy} className="focus-ring flex h-14 w-full items-center justify-center gap-2 rounded-full bg-primary font-bold text-on-primary disabled:opacity-60">
-          <ShieldCheck size={20} /> {busy ? 'Checking...' : isSetup ? 'Create Tenant Account' : 'Log In'}
+          <ShieldCheck size={20} /> {busy ? 'Checking...' : isAdmin ? (isSetup ? 'Create Admin Account' : 'Admin Log In') : isSetup ? 'Create Tenant Account' : 'Log In'}
         </button>
       </form>
     </main>
@@ -1392,9 +1572,9 @@ export default function App() {
   const [current, setCurrent] = useState<RouteKey>('farmer_dashboard_1');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [authMode, setAuthMode] = useState<'checking' | 'setup' | 'login' | 'authenticated'>('checking');
+  const [authMode, setAuthMode] = useState<'checking' | 'setup' | 'login' | 'tenant_authenticated' | 'admin_authenticated'>('checking');
   const online = useOnlineStatus();
-  const data = useFarmData(refreshKey, authMode === 'authenticated');
+  const data = useFarmData(refreshKey, authMode === 'tenant_authenticated' || authMode === 'admin_authenticated');
   const route = useMemo(() => routes.find((r) => r.key === current) ?? routes[0], [current]);
   const activeModuleIds = useMemo(
     () => data.modules.length > 0 ? data.modules.filter((module) => module.active).map((module) => module.moduleId) : ['core'],
@@ -1431,8 +1611,11 @@ export default function App() {
       </main>
     );
   }
-  if (authMode !== 'authenticated') {
-    return <LoginGate mode={authMode} onAuthenticated={() => setAuthMode('authenticated')} />;
+  if (authMode !== 'tenant_authenticated' && authMode !== 'admin_authenticated') {
+    return <LoginGate mode={authMode} onTenantAuthenticated={() => setAuthMode('tenant_authenticated')} onAdminAuthenticated={() => setAuthMode('admin_authenticated')} />;
+  }
+  if (authMode === 'admin_authenticated') {
+    return <AdminConsole data={data} onLogout={() => setAuthMode('login')} />;
   }
   return (
     <div className="min-h-screen bg-background pb-28 font-body text-on-background lg:pb-0">
