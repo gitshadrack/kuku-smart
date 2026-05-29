@@ -21,6 +21,8 @@ On first launch, create the local tenant login. The sample tenant code is:
 NYERI-KUKU-001
 ```
 
+After login, open **Farm Settings** to edit the user account email, account icon, or password.
+
 ## Build
 
 ```powershell

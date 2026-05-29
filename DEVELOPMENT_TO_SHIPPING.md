@@ -129,6 +129,7 @@ Current local security controls:
 
 - PBKDF2 password hashing with per-account salt.
 - Local tenant-code plus username/password account setup and login screen.
+- User Account panel for editing email, account icon, and password.
 - Manual logout button in the top bar.
 - IndexedDB loading delayed until login succeeds.
 - Vite/PWA dev service worker disabled.
@@ -177,8 +178,10 @@ Manual smoke test:
 8. Log out from the top bar.
 9. Log in with tenant code, username, and password.
 10. Confirm records still load.
-11. Toggle airplane/offline mode and confirm the offline banner changes.
-12. Reload the app and confirm the login screen appears.
+11. Open Farm Settings and update account email/icon.
+12. Change the account password and confirm the old password no longer works.
+13. Toggle airplane/offline mode and confirm the offline banner changes.
+14. Reload the app and confirm the login screen appears.
 
 ## 9. Production Build
 
@@ -224,6 +227,7 @@ Complete this checklist before declaring a release candidate shippable.
 - Desktop layout checked with sidebar navigation.
 - Forms save expected records.
 - Local tenant account setup and login work.
+- User Account email/icon/password updates work.
 - Logout button works.
 - Offline mode works after production build.
 - PWA manifest loads.
