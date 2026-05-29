@@ -21,7 +21,7 @@ On first launch, create the local tenant login. The sample tenant code is:
 NYERI-KUKU-001
 ```
 
-After login, open **Farm Settings** to edit the user account email, account icon, or password.
+After login, use the top-bar settings icon to open **Farm Settings**. The **User Account** card lets the tenant edit email, choose an account icon, change password, or log out.
 
 New tenants start with Core only. Paid modules are activated from **Farm Settings** by entering the payment reference for the requested module.
 

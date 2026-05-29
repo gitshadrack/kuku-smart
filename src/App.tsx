@@ -358,7 +358,13 @@ function modulePrice(moduleId: string) {
   return moduleCatalog.find((module) => module.moduleId === moduleId)?.price ?? 0;
 }
 
-function TopBar({ route, onOpenMenu, onBack, onLogout }: { route: { label: string }; onOpenMenu: () => void; onBack: () => void; onLogout: () => void }) {
+function confirmLogout(onLogout: () => void) {
+  if (window.confirm('Log out of Kuku Smart?')) {
+    onLogout();
+  }
+}
+
+function TopBar({ route, onOpenMenu, onBack, onOpenSettings }: { route: { label: string }; onOpenMenu: () => void; onBack: () => void; onOpenSettings: () => void }) {
   const isHome = route.label.includes('Dashboard') || route.label === 'Farmer Dashboard';
   return (
     <header className="fixed left-0 top-0 z-40 flex h-touch-target w-full items-center justify-between border-b border-outline-variant bg-surface px-margin-mobile transition-[left,width] duration-200 ease-out lg:left-72 lg:w-[calc(100%-18rem)]">
@@ -381,8 +387,8 @@ function TopBar({ route, onOpenMenu, onBack, onLogout }: { route: { label: strin
         <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" aria-label="Notifications">
           <Bell size={iconSize} />
         </button>
-        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" onClick={onLogout} aria-label="Log out">
-          <LogOut size={iconSize} />
+        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" onClick={onOpenSettings} aria-label="Farm settings">
+          <Settings size={iconSize} />
         </button>
       </div>
     </header>
@@ -1049,7 +1055,7 @@ function MarketScreen({ data, setCurrent }: { data: ReturnType<typeof useFarmDat
   );
 }
 
-function AccountSettings() {
+function AccountSettings({ onLogout }: { onLogout: () => void }) {
   const [account, setAccount] = useState<AuthRecord | undefined>(() => getStoredAuthRecord());
   const [email, setEmail] = useState(account?.email ?? '');
   const [accountIcon, setAccountIcon] = useState<AccountIconKey>(account?.accountIcon ?? 'sprout');
@@ -1127,14 +1133,19 @@ function AccountSettings() {
 
   return (
     <section className="record-card mb-stack-lg p-stack-md">
-      <div className="mb-stack-md flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary">
-          {accountIconFor(accountIcon, 24)}
+      <div className="mb-stack-md flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+            {accountIconFor(accountIcon, 24)}
+          </div>
+          <div>
+            <h2 className="font-heading text-xl font-semibold text-primary">User Account</h2>
+            <p className="text-sm text-on-surface-variant">{account.tenantCode} - {account.username}</p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-heading text-xl font-semibold text-primary">User Account</h2>
-          <p className="text-sm text-on-surface-variant">{account.tenantCode} - {account.username}</p>
-        </div>
+        <button type="button" onClick={() => confirmLogout(onLogout)} className="focus-ring flex h-12 items-center justify-center gap-2 rounded-xl border-2 border-error px-4 font-bold text-error">
+          <LogOut size={20} /> Log Out
+        </button>
       </div>
       <div className="grid gap-stack-md md:grid-cols-2">
         <label className="flex flex-col gap-2 font-bold text-on-surface">
@@ -1215,7 +1226,7 @@ function AccountSettings() {
   );
 }
 
-function SettingsScreen({ data, onActivateModule }: { data: ReturnType<typeof useFarmData>; onActivateModule: (activation: ModuleActivation, paymentReference: string) => void }) {
+function SettingsScreen({ data, onActivateModule, onLogout }: { data: ReturnType<typeof useFarmData>; onActivateModule: (activation: ModuleActivation, paymentReference: string) => void; onLogout: () => void }) {
   const [paymentReferences, setPaymentReferences] = useState<Record<string, string>>({});
   const [paymentError, setPaymentError] = useState('');
 
@@ -1232,7 +1243,7 @@ function SettingsScreen({ data, onActivateModule }: { data: ReturnType<typeof us
   return (
     <>
       <TitleBlock title="Farm Settings" chips={['Device local', 'No internet required']} />
-      <AccountSettings />
+      <AccountSettings onLogout={onLogout} />
       <section className="record-card mb-stack-lg p-stack-md">
         <h2 className="mb-2 font-heading text-xl font-semibold text-primary">Tenant</h2>
         <div className="grid gap-3 md:grid-cols-2">
@@ -1296,7 +1307,7 @@ function SettingsScreen({ data, onActivateModule }: { data: ReturnType<typeof us
   );
 }
 
-function Screen({ route, data, setCurrent, refresh, onActivateModule }: { route: { key: RouteKey; label: string; group: string; kind: string }; data: ReturnType<typeof useFarmData>; setCurrent: (r: RouteKey) => void; refresh: () => void; onActivateModule: (activation: ModuleActivation, paymentReference: string) => void }) {
+function Screen({ route, data, setCurrent, refresh, onActivateModule, onLogout }: { route: { key: RouteKey; label: string; group: string; kind: string }; data: ReturnType<typeof useFarmData>; setCurrent: (r: RouteKey) => void; refresh: () => void; onActivateModule: (activation: ModuleActivation, paymentReference: string) => void; onLogout: () => void }) {
   const liveEntry = <LiveRecordForm kind={route.kind} onSaved={refresh} />;
   if (route.kind === 'dashboard') return <Dashboard data={data} setCurrent={setCurrent} />;
   if (route.kind === 'batch-form') return <BatchForm onSaved={() => { refresh(); setCurrent('bird_batches_1'); }} />;
@@ -1305,7 +1316,7 @@ function Screen({ route, data, setCurrent, refresh, onActivateModule }: { route:
   if (route.kind === 'batches') return <BatchesScreen data={data} setCurrent={setCurrent} />;
   if (route.kind === 'market') return <MarketScreen data={data} setCurrent={setCurrent} />;
   if (route.kind === 'report' || route.kind === 'forecast') return <ReportScreen title={route.label} data={data} />;
-  if (route.kind === 'settings') return <SettingsScreen data={data} onActivateModule={onActivateModule} />;
+  if (route.kind === 'settings') return <SettingsScreen data={data} onActivateModule={onActivateModule} onLogout={onLogout} />;
   if (route.kind === 'sales') return <GenericList title={route.label} icon={<Wallet size={22} />} entry={liveEntry} items={data.sales.map((sale) => ({ title: sale.item, meta: `${sale.buyer} - ${sale.date}`, amount: `${sale.type === 'Income' ? '+' : '-'} ${formatMoney(sale.amount)}`, tone: sale.type === 'Income' ? 'green' : 'red' }))} />;
   if (route.kind === 'eggs') return <GenericList title={route.label} icon={<Egg size={22} />} entry={liveEntry} items={data.eggs.map((egg) => ({ title: `${egg.trays} trays, ${egg.looseEggs} loose`, meta: `${egg.batchName} - ${egg.date}`, amount: `${egg.damaged} damaged`, tone: egg.damaged > 2 ? 'yellow' : 'green' }))} />;
   if (route.kind === 'health' || route.kind === 'treatments') return <GenericList title={route.label} icon={<HeartPulse size={22} />} entry={liveEntry} items={data.health.map((h) => ({ title: h.issue, meta: `${h.batchName} - ${h.treatment}`, amount: h.status, tone: h.status === 'Clear' ? 'green' : 'yellow' }))} />;
@@ -1339,7 +1350,7 @@ function AdminConsole({ data, onLogout }: { data: ReturnType<typeof useFarmData>
             <p className="text-xs font-bold uppercase text-on-surface-variant">{admin?.adminId ?? 'admin'}</p>
           </div>
         </div>
-        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" onClick={onLogout} aria-label="Admin log out">
+        <button className="focus-ring flex h-12 w-12 items-center justify-center rounded-full text-on-surface-variant" onClick={() => confirmLogout(onLogout)} aria-label="Admin log out">
           <LogOut size={iconSize} />
         </button>
       </header>
@@ -1620,12 +1631,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background pb-28 font-body text-on-background lg:pb-0">
       <DesktopSidebar current={current} setCurrent={setCurrent} activeModuleIds={activeModuleIds} />
-      <TopBar route={route} onOpenMenu={() => setDrawerOpen(true)} onBack={() => setCurrent('farmer_dashboard_1')} onLogout={() => setAuthMode('login')} />
+      <TopBar route={route} onOpenMenu={() => setDrawerOpen(true)} onBack={() => setCurrent('farmer_dashboard_1')} onOpenSettings={() => setCurrent('farm_settings_1')} />
       <ScreenDrawer open={drawerOpen} current={current} setCurrent={setCurrent} activeModuleIds={activeModuleIds} onClose={() => setDrawerOpen(false)} />
       <main className="w-full px-margin-mobile pt-20 transition-[margin,width] duration-200 ease-out lg:ml-72 lg:w-[calc(100%-18rem)]">
         <div className="mx-auto max-w-5xl">
           <OfflineBanner online={online} queued={data.queued} />
-          <Screen route={route} data={data} setCurrent={setCurrent} refresh={() => setRefreshKey((key) => key + 1)} onActivateModule={activateModuleWithPayment} />
+          <Screen route={route} data={data} setCurrent={setCurrent} refresh={() => setRefreshKey((key) => key + 1)} onActivateModule={activateModuleWithPayment} onLogout={() => setAuthMode('login')} />
         </div>
       </main>
       {!['batch-form', 'health-form', 'sale-form'].includes(route.kind) && <BottomNav current={current} setCurrent={setCurrent} activeModuleIds={activeModuleIds} />}

@@ -132,10 +132,11 @@ Current local security controls:
 - PBKDF2 password hashing with per-account salt.
 - Local tenant-code plus username/password account setup and login screen.
 - Separate local admin account setup and login screen.
-- User Account panel for editing email, account icon, and password.
+- User Account panel for editing email, account icon, password, and logout.
 - Core-only default access for new tenants.
 - Payment-reference activation for paid modules.
-- Manual logout button in the top bar.
+- Farm Settings shortcut in the top bar.
+- Logout button in the User Account card with confirmation.
 - IndexedDB loading delayed until login succeeds.
 - Vite/PWA dev service worker disabled.
 
@@ -181,7 +182,7 @@ Manual smoke test:
 6. Confirm the activated module appears in navigation.
 7. Add a sample record in the activated module.
 8. Confirm queued sync count changes.
-9. Log out from the top bar.
+9. Log out from the User Account card and confirm the prompt.
 10. Log in with tenant code, username, and password.
 11. Confirm records still load.
 12. Open Farm Settings and update account email/icon.
@@ -237,7 +238,7 @@ Complete this checklist before declaring a release candidate shippable.
 - Local tenant account setup and login work.
 - Local admin account setup and login work.
 - Admin Console shows tenant/module payment status.
-- User Account email/icon/password updates work.
+- User Account email/icon/password/logout updates work.
 - New tenants only have Core until paid modules are activated.
 - Paid module activation requires a payment reference.
 - Logout button works.
