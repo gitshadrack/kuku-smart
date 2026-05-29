@@ -23,6 +23,8 @@ NYERI-KUKU-001
 
 After login, open **Farm Settings** to edit the user account email, account icon, or password.
 
+New tenants start with Core only. Paid modules are activated from **Farm Settings** by entering the payment reference for the requested module.
+
 ## Build
 
 ```powershell

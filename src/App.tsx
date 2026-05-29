@@ -300,6 +300,10 @@ function accountIconFor(key: AccountIconKey | undefined, size = 22) {
   return <Sprout size={size} />;
 }
 
+function modulePrice(moduleId: string) {
+  return moduleCatalog.find((module) => module.moduleId === moduleId)?.price ?? 0;
+}
+
 function TopBar({ route, onOpenMenu, onBack, onLogout }: { route: { label: string }; onOpenMenu: () => void; onBack: () => void; onLogout: () => void }) {
   const isHome = route.label.includes('Dashboard') || route.label === 'Farmer Dashboard';
   return (
@@ -1157,7 +1161,20 @@ function AccountSettings() {
   );
 }
 
-function SettingsScreen({ data, onToggleModule }: { data: ReturnType<typeof useFarmData>; onToggleModule: (activation: ModuleActivation) => void }) {
+function SettingsScreen({ data, onActivateModule }: { data: ReturnType<typeof useFarmData>; onActivateModule: (activation: ModuleActivation, paymentReference: string) => void }) {
+  const [paymentReferences, setPaymentReferences] = useState<Record<string, string>>({});
+  const [paymentError, setPaymentError] = useState('');
+
+  function activatePaidModule(activation: ModuleActivation) {
+    const reference = (paymentReferences[activation.moduleId] ?? '').trim();
+    if (reference.length < 6) {
+      setPaymentError('Enter a valid payment reference for the requested module.');
+      return;
+    }
+    setPaymentError('');
+    onActivateModule(activation, reference);
+  }
+
   return (
     <>
       <TitleBlock title="Farm Settings" chips={['Device local', 'No internet required']} />
@@ -1173,24 +1190,41 @@ function SettingsScreen({ data, onToggleModule }: { data: ReturnType<typeof useF
       </section>
       <section className="mb-stack-lg">
         <SectionHeader title="Module Activation" />
+        <p className="mb-stack-sm text-sm font-bold text-on-surface-variant">New tenants start with Core only. Enter a payment reference to activate each requested module.</p>
+        {paymentError && <p className="mb-stack-sm rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm font-bold text-error">{paymentError}</p>}
         <div className="space-y-stack-sm">
           {moduleCatalog.map((module) => {
             const activation = data.modules.find((item) => item.moduleId === module.moduleId);
             const active = activation?.active ?? false;
             const lockedCore = module.moduleId === 'core';
+            const price = module.price ?? 0;
             return (
-              <div key={module.moduleId} className="record-card flex items-center justify-between gap-3 p-4">
-                <div>
+              <div key={module.moduleId} className="record-card grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+                <div className="min-w-0">
                   <h3 className="font-bold">{module.label}</h3>
-                  <p className="text-sm text-on-surface-variant">{active ? 'Activated for this tenant' : 'Hidden until activated'}</p>
+                  <p className="text-sm text-on-surface-variant">
+                    {lockedCore ? 'Included for every tenant' : active ? `Activated with ${activation?.paymentReference ?? 'payment reference'}` : `Requires payment of ${formatMoney(price)}`}
+                  </p>
                 </div>
-                <button
-                  disabled={!activation || lockedCore}
-                  onClick={() => activation && onToggleModule(activation)}
-                  className={`h-touch-target min-w-28 rounded-xl px-4 text-sm font-bold ${active ? 'bg-primary text-on-primary' : 'border-2 border-primary text-primary'} disabled:opacity-60`}
-                >
-                  {lockedCore ? 'Required' : active ? 'Active' : 'Activate'}
-                </button>
+                {lockedCore || active ? (
+                  <Chip tone={lockedCore ? 'plain' : 'green'}>{lockedCore ? 'Required' : 'Active'}</Chip>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      value={paymentReferences[module.moduleId] ?? ''}
+                      onChange={(event) => setPaymentReferences((current) => ({ ...current, [module.moduleId]: event.target.value }))}
+                      placeholder="Payment reference"
+                      className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      disabled={!activation}
+                      onClick={() => activation && activatePaidModule(activation)}
+                      className="focus-ring h-touch-target rounded-xl bg-primary px-4 text-sm font-bold text-on-primary disabled:opacity-60"
+                    >
+                      Pay & Activate
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1208,7 +1242,7 @@ function SettingsScreen({ data, onToggleModule }: { data: ReturnType<typeof useF
   );
 }
 
-function Screen({ route, data, setCurrent, refresh, onToggleModule }: { route: { key: RouteKey; label: string; group: string; kind: string }; data: ReturnType<typeof useFarmData>; setCurrent: (r: RouteKey) => void; refresh: () => void; onToggleModule: (activation: ModuleActivation) => void }) {
+function Screen({ route, data, setCurrent, refresh, onActivateModule }: { route: { key: RouteKey; label: string; group: string; kind: string }; data: ReturnType<typeof useFarmData>; setCurrent: (r: RouteKey) => void; refresh: () => void; onActivateModule: (activation: ModuleActivation, paymentReference: string) => void }) {
   const liveEntry = <LiveRecordForm kind={route.kind} onSaved={refresh} />;
   if (route.kind === 'dashboard') return <Dashboard data={data} setCurrent={setCurrent} />;
   if (route.kind === 'batch-form') return <BatchForm onSaved={() => { refresh(); setCurrent('bird_batches_1'); }} />;
@@ -1217,7 +1251,7 @@ function Screen({ route, data, setCurrent, refresh, onToggleModule }: { route: {
   if (route.kind === 'batches') return <BatchesScreen data={data} setCurrent={setCurrent} />;
   if (route.kind === 'market') return <MarketScreen data={data} setCurrent={setCurrent} />;
   if (route.kind === 'report' || route.kind === 'forecast') return <ReportScreen title={route.label} data={data} />;
-  if (route.kind === 'settings') return <SettingsScreen data={data} onToggleModule={onToggleModule} />;
+  if (route.kind === 'settings') return <SettingsScreen data={data} onActivateModule={onActivateModule} />;
   if (route.kind === 'sales') return <GenericList title={route.label} icon={<Wallet size={22} />} entry={liveEntry} items={data.sales.map((sale) => ({ title: sale.item, meta: `${sale.buyer} - ${sale.date}`, amount: `${sale.type === 'Income' ? '+' : '-'} ${formatMoney(sale.amount)}`, tone: sale.type === 'Income' ? 'green' : 'red' }))} />;
   if (route.kind === 'eggs') return <GenericList title={route.label} icon={<Egg size={22} />} entry={liveEntry} items={data.eggs.map((egg) => ({ title: `${egg.trays} trays, ${egg.looseEggs} loose`, meta: `${egg.batchName} - ${egg.date}`, amount: `${egg.damaged} damaged`, tone: egg.damaged > 2 ? 'yellow' : 'green' }))} />;
   if (route.kind === 'health' || route.kind === 'treatments') return <GenericList title={route.label} icon={<HeartPulse size={22} />} entry={liveEntry} items={data.health.map((h) => ({ title: h.issue, meta: `${h.batchName} - ${h.treatment}`, amount: h.status, tone: h.status === 'Clear' ? 'green' : 'yellow' }))} />;
@@ -1374,13 +1408,17 @@ export default function App() {
   useEffect(() => {
     setAuthMode(getStoredAuthRecord() ? 'login' : 'setup');
   }, []);
-  async function toggleModuleActivation(activation: ModuleActivation) {
+  async function activateModuleWithPayment(activation: ModuleActivation, paymentReference: string) {
     if (!activation.id || activation.moduleId === 'core') return;
+    const paidAt = new Date().toISOString();
     const updated: ModuleActivation = {
       ...activation,
-      active: !activation.active,
-      activatedAt: !activation.active ? new Date().toISOString() : activation.activatedAt,
-      updatedAt: new Date().toISOString()
+      active: true,
+      activatedAt: activation.activatedAt ?? paidAt,
+      paidAt,
+      paymentReference: paymentReference.trim(),
+      amountPaid: modulePrice(activation.moduleId),
+      updatedAt: paidAt
     };
     await db.module_activations.update(activation.id, updated);
     await queueChange('module_activations', activation.id, 'update', updated);
@@ -1404,7 +1442,7 @@ export default function App() {
       <main className="w-full px-margin-mobile pt-20 transition-[margin,width] duration-200 ease-out lg:ml-72 lg:w-[calc(100%-18rem)]">
         <div className="mx-auto max-w-5xl">
           <OfflineBanner online={online} queued={data.queued} />
-          <Screen route={route} data={data} setCurrent={setCurrent} refresh={() => setRefreshKey((key) => key + 1)} onToggleModule={toggleModuleActivation} />
+          <Screen route={route} data={data} setCurrent={setCurrent} refresh={() => setRefreshKey((key) => key + 1)} onActivateModule={activateModuleWithPayment} />
         </div>
       </main>
       {!['batch-form', 'health-form', 'sale-form'].includes(route.kind) && <BottomNav current={current} setCurrent={setCurrent} activeModuleIds={activeModuleIds} />}

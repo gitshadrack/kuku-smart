@@ -126,6 +126,9 @@ export interface ModuleActivation extends BaseRecord {
   active: boolean;
   activatedAt?: string;
   expiresAt?: string;
+  paymentReference?: string;
+  paidAt?: string;
+  amountPaid?: number;
 }
 
 export interface SyncQueueItem extends BaseRecord {
@@ -207,12 +210,12 @@ export class KukuSmartDb extends Dexie {
 export const db = new KukuSmartDb();
 
 export const moduleCatalog = [
-  { moduleId: 'core', label: 'Core Operations', defaultActive: true },
-  { moduleId: 'farm_records', label: 'Farm Records', defaultActive: true },
-  { moduleId: 'feed_suppliers', label: 'Feed and Suppliers', defaultActive: false },
-  { moduleId: 'health', label: 'Health', defaultActive: true },
-  { moduleId: 'market_sales', label: 'Market and Sales', defaultActive: false },
-  { moduleId: 'workers_alerts', label: 'Workers and Alerts', defaultActive: false }
+  { moduleId: 'core', label: 'Core Operations', defaultActive: true, price: 0 },
+  { moduleId: 'farm_records', label: 'Farm Records', defaultActive: false, price: 1200 },
+  { moduleId: 'feed_suppliers', label: 'Feed and Suppliers', defaultActive: false, price: 900 },
+  { moduleId: 'health', label: 'Health', defaultActive: false, price: 1000 },
+  { moduleId: 'market_sales', label: 'Market and Sales', defaultActive: false, price: 1500 },
+  { moduleId: 'workers_alerts', label: 'Workers and Alerts', defaultActive: false, price: 800 }
 ];
 
 export async function queueChange<T extends BaseRecord>(
@@ -272,6 +275,12 @@ export async function seedDatabase() {
         active: module.defaultActive,
         activatedAt: module.defaultActive ? stamp : undefined,
         createdAt: stamp,
+        updatedAt: stamp
+      });
+    } else if (existing.id && module.price > 0 && existing.active && !existing.paymentReference) {
+      await db.module_activations.update(existing.id, {
+        active: false,
+        activatedAt: undefined,
         updatedAt: stamp
       });
     }

@@ -13,6 +13,7 @@ Current app characteristics:
 - Local storage: IndexedDB through Dexie.
 - PWA: `vite-plugin-pwa` with production service worker generation.
 - Security baseline: local tenant-code plus username/password login gate, PBKDF2 password hashing, production-only service worker registration, zero known npm audit vulnerabilities at time of writing.
+- Module access: new tenants receive Core only; paid modules require a payment reference before activation.
 
 ## 2. Repository Structure
 
@@ -130,6 +131,8 @@ Current local security controls:
 - PBKDF2 password hashing with per-account salt.
 - Local tenant-code plus username/password account setup and login screen.
 - User Account panel for editing email, account icon, and password.
+- Core-only default access for new tenants.
+- Payment-reference activation for paid modules.
 - Manual logout button in the top bar.
 - IndexedDB loading delayed until login succeeds.
 - Vite/PWA dev service worker disabled.
@@ -171,17 +174,18 @@ Manual smoke test:
 1. Open the app on `http://127.0.0.1:5173/`.
 2. Create a local tenant account using tenant code, username, and password.
 3. Confirm the dashboard loads.
-4. Add a sample batch record.
-5. Add a sample health record.
-6. Add a sample sales record.
-7. Confirm queued sync count changes.
-8. Log out from the top bar.
-9. Log in with tenant code, username, and password.
-10. Confirm records still load.
-11. Open Farm Settings and update account email/icon.
-12. Change the account password and confirm the old password no longer works.
-13. Toggle airplane/offline mode and confirm the offline banner changes.
-14. Reload the app and confirm the login screen appears.
+4. Confirm paid modules are hidden before activation.
+5. Open Farm Settings and activate a requested module with a payment reference.
+6. Confirm the activated module appears in navigation.
+7. Add a sample record in the activated module.
+8. Confirm queued sync count changes.
+9. Log out from the top bar.
+10. Log in with tenant code, username, and password.
+11. Confirm records still load.
+12. Open Farm Settings and update account email/icon.
+13. Change the account password and confirm the old password no longer works.
+14. Toggle airplane/offline mode and confirm the offline banner changes.
+15. Reload the app and confirm the login screen appears.
 
 ## 9. Production Build
 
@@ -228,6 +232,8 @@ Complete this checklist before declaring a release candidate shippable.
 - Forms save expected records.
 - Local tenant account setup and login work.
 - User Account email/icon/password updates work.
+- New tenants only have Core until paid modules are activated.
+- Paid module activation requires a payment reference.
 - Logout button works.
 - Offline mode works after production build.
 - PWA manifest loads.
