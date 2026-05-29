@@ -14,7 +14,7 @@ Current app characteristics:
 - PWA: `vite-plugin-pwa` with production service worker generation.
 - Security baseline: local tenant-code plus username/password login gate, PBKDF2 password hashing, production-only service worker registration, zero known npm audit vulnerabilities at time of writing.
 - Module access: new tenants receive Core only; paid modules require a payment reference before activation.
-- Admin access: admins use the Admin tab on the login screen and land in an Admin Console for tenant/module oversight.
+- Admin access: admins use the Admin tab on the login screen and land in a Superadmin Module for business, package, subscription, and payment oversight.
 
 ## 2. Repository Structure
 
@@ -132,6 +132,7 @@ Current local security controls:
 - PBKDF2 password hashing with per-account salt.
 - Local tenant-code plus username/password account setup and login screen.
 - Separate local admin account setup and login screen.
+- Superadmin Module for creating businesses, managing SaaS packages, allocating subscriptions, recording offline payment references, and deactivating businesses.
 - User Account panel for editing email, account icon, password, and logout.
 - Core-only default access for new tenants.
 - Payment-reference activation for paid modules.
@@ -190,7 +191,7 @@ Manual smoke test:
 14. Toggle airplane/offline mode and confirm the offline banner changes.
 15. Reload the app and confirm the login screen appears.
 16. Use the Admin tab to create/log into an admin account.
-17. Confirm the Admin Console shows tenant profile and module payment status.
+17. Confirm the Superadmin Module can create a business, create a package, allocate a subscription, and show module payment status.
 
 ## 9. Production Build
 
@@ -237,7 +238,7 @@ Complete this checklist before declaring a release candidate shippable.
 - Forms save expected records.
 - Local tenant account setup and login work.
 - Local admin account setup and login work.
-- Admin Console shows tenant/module payment status.
+- Superadmin Module shows business/package/subscription and module payment status.
 - User Account email/icon/password/logout updates work.
 - New tenants only have Core until paid modules are activated.
 - Paid module activation requires a payment reference.

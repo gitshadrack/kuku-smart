@@ -184,6 +184,9 @@ const formatMoney = (value: number) => `KSh ${value.toLocaleString('en-KE')}`;
 const iconSize = 22;
 const authStorageKey = 'kuku_smart_local_login_v1';
 const adminAuthStorageKey = 'kuku_smart_admin_login_v1';
+const superBusinessesStorageKey = 'kuku_smart_super_businesses_v1';
+const superPackagesStorageKey = 'kuku_smart_super_packages_v1';
+const superSubscriptionsStorageKey = 'kuku_smart_super_subscriptions_v1';
 const defaultTenantCode = 'NYERI-KUKU-001';
 
 type AuthRecord = {
@@ -209,6 +212,46 @@ type AdminAuthRecord = {
 };
 
 type AccountIconKey = 'sprout' | 'shield' | 'users' | 'wallet';
+type BillingInterval = 'Monthly' | 'Yearly';
+type BusinessStatus = 'Active' | 'Inactive';
+type SubscriptionStatus = 'Active' | 'Waiting' | 'Declined';
+
+type SuperBusiness = {
+  id: string;
+  name: string;
+  code: string;
+  ownerName: string;
+  county: string;
+  status: BusinessStatus;
+  currentPackageId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SuperPackage = {
+  id: string;
+  name: string;
+  price: number;
+  interval: BillingInterval;
+  trialDays: number;
+  active: boolean;
+  popular: boolean;
+  privatePackage: boolean;
+  moduleIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SuperSubscription = {
+  id: string;
+  businessCode: string;
+  packageId: string;
+  status: SubscriptionStatus;
+  paymentReference: string;
+  startsAt: string;
+  expiresAt: string;
+  createdAt: string;
+};
 
 const accountIconOptions: { key: AccountIconKey; label: string }[] = [
   { key: 'sprout', label: 'Farm' },
@@ -356,6 +399,93 @@ function accountIconFor(key: AccountIconKey | undefined, size = 22) {
 
 function modulePrice(moduleId: string) {
   return moduleCatalog.find((module) => module.moduleId === moduleId)?.price ?? 0;
+}
+
+function storageId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readStorageList<T>(key: string, fallback: T[]) {
+  const raw = localStorage.getItem(key);
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T[];
+  } catch {
+    localStorage.removeItem(key);
+    return fallback;
+  }
+}
+
+function writeStorageList<T>(key: string, value: T[]) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function defaultSuperPackages() {
+  const stamp = new Date().toISOString();
+  return [
+    {
+      id: 'starter',
+      name: 'Starter',
+      price: 1200,
+      interval: 'Monthly' as BillingInterval,
+      trialDays: 7,
+      active: true,
+      popular: false,
+      privatePackage: false,
+      moduleIds: ['farm_records'],
+      createdAt: stamp,
+      updatedAt: stamp
+    },
+    {
+      id: 'growth',
+      name: 'Growth',
+      price: 3200,
+      interval: 'Monthly' as BillingInterval,
+      trialDays: 7,
+      active: true,
+      popular: true,
+      privatePackage: false,
+      moduleIds: ['farm_records', 'health', 'feed_suppliers'],
+      createdAt: stamp,
+      updatedAt: stamp
+    },
+    {
+      id: 'enterprise',
+      name: 'Enterprise',
+      price: 5200,
+      interval: 'Monthly' as BillingInterval,
+      trialDays: 14,
+      active: true,
+      popular: false,
+      privatePackage: true,
+      moduleIds: ['farm_records', 'health', 'feed_suppliers', 'market_sales', 'workers_alerts'],
+      createdAt: stamp,
+      updatedAt: stamp
+    }
+  ];
+}
+
+function ensureSuperadminData(tenant?: TenantProfile) {
+  const stamp = new Date().toISOString();
+  const businesses = readStorageList<SuperBusiness>(superBusinessesStorageKey, []);
+  if (businesses.length === 0) {
+    writeStorageList<SuperBusiness>(superBusinessesStorageKey, [{
+      id: storageId('business'),
+      name: tenant?.name ?? 'Nyeri Smallholder Poultry',
+      code: normalizeTenantCode(tenant?.code ?? defaultTenantCode),
+      ownerName: tenant?.ownerName ?? 'Farm Owner',
+      county: tenant?.county ?? 'Nyeri',
+      status: 'Active',
+      createdAt: stamp,
+      updatedAt: stamp
+    }]);
+  }
+  if (readStorageList<SuperPackage>(superPackagesStorageKey, []).length === 0) {
+    writeStorageList<SuperPackage>(superPackagesStorageKey, defaultSuperPackages());
+  }
+  if (!localStorage.getItem(superSubscriptionsStorageKey)) {
+    writeStorageList<SuperSubscription>(superSubscriptionsStorageKey, []);
+  }
 }
 
 function confirmLogout(onLogout: () => void) {
@@ -1334,11 +1464,144 @@ function Screen({ route, data, setCurrent, refresh, onActivateModule, onLogout }
   return <GenericList title={route.label} icon={<CalendarDays size={22} />} entry={liveEntry} items={data.tasks.map((task) => ({ title: task.title, meta: `${task.category} - ${task.dueDate}`, amount: task.priority, tone: task.priority === 'Urgent' ? 'red' : 'yellow' }))} />;
 }
 
-function AdminConsole({ data, onLogout }: { data: ReturnType<typeof useFarmData>; onLogout: () => void }) {
+function AdminConsole({ data, onLogout, onRefresh }: { data: ReturnType<typeof useFarmData>; onLogout: () => void; onRefresh: () => void }) {
   const admin = getStoredAdminAuthRecord();
+  const [adminTab, setAdminTab] = useState<'businesses' | 'packages' | 'subscriptions'>('businesses');
+  const [businesses, setBusinesses] = useState<SuperBusiness[]>([]);
+  const [packages, setPackages] = useState<SuperPackage[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SuperSubscription[]>([]);
+  const [message, setMessage] = useState('');
   const activeModules = data.modules.filter((module) => module.active).length;
   const paidModules = data.modules.filter((module) => module.paymentReference).length;
   const totalPaid = data.modules.reduce((sum, module) => sum + (module.amountPaid ?? 0), 0);
+
+  function reloadSuperadminData() {
+    ensureSuperadminData(data.tenant);
+    setBusinesses(readStorageList<SuperBusiness>(superBusinessesStorageKey, []));
+    setPackages(readStorageList<SuperPackage>(superPackagesStorageKey, defaultSuperPackages()));
+    setSubscriptions(readStorageList<SuperSubscription>(superSubscriptionsStorageKey, []));
+  }
+
+  useEffect(() => {
+    reloadSuperadminData();
+  }, [data.tenant?.code]);
+
+  function addBusiness(formData: FormData) {
+    const stamp = new Date().toISOString();
+    const code = normalizeTenantCode(String(formData.get('code') || ''));
+    if (!code) {
+      setMessage('Business code is required.');
+      return;
+    }
+    if (businesses.some((business) => business.code === code)) {
+      setMessage('Business code already exists.');
+      return;
+    }
+    const next = [{
+      id: storageId('business'),
+      name: String(formData.get('name') || 'New Business'),
+      code,
+      ownerName: String(formData.get('ownerName') || 'Owner'),
+      county: String(formData.get('county') || 'Nyeri'),
+      status: 'Active' as BusinessStatus,
+      createdAt: stamp,
+      updatedAt: stamp
+    }, ...businesses];
+    writeStorageList(superBusinessesStorageKey, next);
+    setBusinesses(next);
+    setMessage('Business created.');
+  }
+
+  function toggleBusinessStatus(business: SuperBusiness) {
+    const next = businesses.map((item) => item.id === business.id ? {
+      ...item,
+      status: item.status === 'Active' ? 'Inactive' as BusinessStatus : 'Active' as BusinessStatus,
+      updatedAt: new Date().toISOString()
+    } : item);
+    writeStorageList(superBusinessesStorageKey, next);
+    setBusinesses(next);
+  }
+
+  function addPackage(formData: FormData) {
+    const stamp = new Date().toISOString();
+    const moduleIds = moduleCatalog.filter((module) => module.moduleId !== 'core' && formData.get(module.moduleId) === 'on').map((module) => module.moduleId);
+    if (moduleIds.length === 0) {
+      setMessage('Select at least one paid module for the package.');
+      return;
+    }
+    const next = [{
+      id: storageId('package'),
+      name: String(formData.get('name') || 'Custom Package'),
+      price: Number(formData.get('price') || 0),
+      interval: String(formData.get('interval') || 'Monthly') as BillingInterval,
+      trialDays: Number(formData.get('trialDays') || 0),
+      active: true,
+      popular: formData.get('popular') === 'on',
+      privatePackage: formData.get('privatePackage') === 'on',
+      moduleIds,
+      createdAt: stamp,
+      updatedAt: stamp
+    }, ...packages];
+    writeStorageList(superPackagesStorageKey, next);
+    setPackages(next);
+    setMessage('Package created.');
+  }
+
+  async function addSubscription(formData: FormData) {
+    const businessCode = normalizeTenantCode(String(formData.get('businessCode') || ''));
+    const packageId = String(formData.get('packageId') || '');
+    const paymentReference = String(formData.get('paymentReference') || '').trim();
+    const selectedPackage = packages.find((item) => item.id === packageId);
+    if (!businessCode || !selectedPackage || paymentReference.length < 6) {
+      setMessage('Select business, package, and a valid payment reference.');
+      return;
+    }
+    const startsAt = new Date();
+    const expiresAt = new Date(startsAt);
+    if (selectedPackage.interval === 'Yearly') expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    else expiresAt.setMonth(expiresAt.getMonth() + 1);
+    const subscription: SuperSubscription = {
+      id: storageId('subscription'),
+      businessCode,
+      packageId,
+      status: 'Active',
+      paymentReference,
+      startsAt: startsAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      createdAt: startsAt.toISOString()
+    };
+    const nextSubscriptions = [subscription, ...subscriptions];
+    const nextBusinesses = businesses.map((business) => business.code === businessCode ? {
+      ...business,
+      status: 'Active' as BusinessStatus,
+      currentPackageId: packageId,
+      updatedAt: startsAt.toISOString()
+    } : business);
+    writeStorageList(superSubscriptionsStorageKey, nextSubscriptions);
+    writeStorageList(superBusinessesStorageKey, nextBusinesses);
+    setSubscriptions(nextSubscriptions);
+    setBusinesses(nextBusinesses);
+    if (normalizeTenantCode(data.tenant?.code ?? '') === businessCode) {
+      for (const moduleId of selectedPackage.moduleIds) {
+        const activation = data.modules.find((module) => module.moduleId === moduleId);
+        if (activation?.id) {
+          const updated: ModuleActivation = {
+            ...activation,
+            active: true,
+            activatedAt: activation.activatedAt ?? startsAt.toISOString(),
+            paidAt: startsAt.toISOString(),
+            paymentReference,
+            amountPaid: modulePrice(moduleId),
+            updatedAt: startsAt.toISOString()
+          };
+          await db.module_activations.update(activation.id, updated);
+          await queueChange('module_activations', activation.id, 'update', updated);
+        }
+      }
+      onRefresh();
+    }
+    setMessage('Subscription allocated.');
+  }
 
   return (
     <div className="min-h-screen bg-background font-body text-on-background">
@@ -1355,21 +1618,121 @@ function AdminConsole({ data, onLogout }: { data: ReturnType<typeof useFarmData>
         </button>
       </header>
       <main className="mx-auto max-w-5xl px-margin-mobile py-stack-lg">
-        <TitleBlock title="Tenant Oversight" chips={[data.tenant?.code ?? defaultTenantCode, `${activeModules} Active Modules`, formatMoney(totalPaid)]} />
+        <TitleBlock title="Superadmin Module" chips={[`${businesses.length} Businesses`, `${packages.length} Packages`, formatMoney(totalPaid)]} />
         <section className="mb-stack-lg grid gap-gutter-mobile md:grid-cols-3">
           <StatCard icon={<Users size={20} />} label="Tenant" value={data.tenant?.name ?? 'No tenant'} note={data.tenant?.county ?? 'Not set'} />
           <StatCard icon={<ShieldCheck size={20} />} label="Modules" value={`${activeModules}/${moduleCatalog.length}`} note={`${paidModules} paid`} tone="secondary" />
           <StatCard icon={<Wallet size={20} />} label="Payments" value={formatMoney(totalPaid)} note="Recorded locally" tone="tertiary" />
         </section>
-        <section className="record-card mb-stack-lg p-stack-md">
-          <h2 className="mb-stack-md font-heading text-xl font-semibold text-primary">Tenant Profile</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Metric label="Farm" value={data.tenant?.name ?? 'No active tenant'} />
-            <Metric label="Tenant Code" value={data.tenant?.code ?? 'Not assigned'} />
-            <Metric label="County" value={data.tenant?.county ?? 'Not set'} />
-            <Metric label="Owner" value={data.tenant?.ownerName ?? 'Not set'} />
-          </div>
-        </section>
+        <div className="mb-stack-lg grid grid-cols-3 gap-2 rounded-lg bg-surface-container p-1">
+          {[
+            ['businesses', 'Businesses'],
+            ['packages', 'Packages'],
+            ['subscriptions', 'Subscriptions']
+          ].map(([key, label]) => (
+            <button key={key} onClick={() => setAdminTab(key as typeof adminTab)} className={`h-11 rounded-md text-sm font-bold ${adminTab === key ? 'bg-white text-primary' : 'text-on-surface-variant'}`}>{label}</button>
+          ))}
+        </div>
+        {message && <p className="mb-stack-md rounded-lg border border-primary/30 bg-primary-fixed px-4 py-3 text-sm font-bold text-primary">{message}</p>}
+        {adminTab === 'businesses' && (
+          <>
+            <section className="record-card mb-stack-lg p-stack-md">
+              <SectionHeader title="Create Business" />
+              <form className="grid gap-stack-md md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); addBusiness(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
+                <TextField name="name" label="Business Name" placeholder="Nyeri Poultry Group" />
+                <TextField name="code" label="Business Code" placeholder="NYERI-KUKU-002" />
+                <TextField name="ownerName" label="Owner" placeholder="Farm Owner" />
+                <TextField name="county" label="County" placeholder="Nyeri" />
+                <button className="focus-ring flex h-14 items-center justify-center gap-2 rounded-xl bg-primary font-bold text-on-primary md:col-span-2"><Plus size={20} /> Create Business</button>
+              </form>
+            </section>
+            <section>
+              <SectionHeader title="All Businesses" />
+              <div className="space-y-stack-sm">
+                {businesses.map((business) => (
+                  <div key={business.id} className="record-card grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+                    <div>
+                      <h3 className="font-bold">{business.name}</h3>
+                      <p className="text-sm text-on-surface-variant">{business.code} - {business.ownerName} - {business.county}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Chip tone={business.status === 'Active' ? 'green' : 'plain'}>{business.status}</Chip>
+                      <button onClick={() => toggleBusinessStatus(business)} className="h-touch-target rounded-xl border-2 border-primary px-4 text-sm font-bold text-primary">{business.status === 'Active' ? 'Deactivate' : 'Activate'}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+        {adminTab === 'packages' && (
+          <>
+            <section className="record-card mb-stack-lg p-stack-md">
+              <SectionHeader title="Create Package" />
+              <form className="grid gap-stack-md md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); addPackage(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
+                <TextField name="name" label="Package Name" placeholder="Growth" />
+                <TextField name="price" label="Price" type="number" placeholder="3200" />
+                <SelectField name="interval" label="Interval" options={['Monthly', 'Yearly']} />
+                <TextField name="trialDays" label="Trial Days" type="number" placeholder="7" />
+                <div className="md:col-span-2">
+                  <p className="mb-2 font-bold text-on-surface">Included modules</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {moduleCatalog.filter((module) => module.moduleId !== 'core').map((module) => (
+                      <label key={module.moduleId} className="flex min-h-[48px] items-center gap-2 rounded-lg border border-outline-variant bg-white px-3 font-bold">
+                        <input name={module.moduleId} type="checkbox" /> {module.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <label className="flex min-h-[48px] items-center gap-2 font-bold"><input name="popular" type="checkbox" /> Popular</label>
+                <label className="flex min-h-[48px] items-center gap-2 font-bold"><input name="privatePackage" type="checkbox" /> Superadmin only</label>
+                <button className="focus-ring flex h-14 items-center justify-center gap-2 rounded-xl bg-primary font-bold text-on-primary md:col-span-2"><Plus size={20} /> Create Package</button>
+              </form>
+            </section>
+            <div className="space-y-stack-sm">
+              {packages.map((item) => (
+                <div key={item.id} className="record-card grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+                  <div>
+                    <h3 className="font-bold">{item.name}</h3>
+                    <p className="text-sm text-on-surface-variant">{formatMoney(item.price)} / {item.interval} - {item.moduleIds.length} modules - {item.trialDays} trial days</p>
+                  </div>
+                  <div className="flex gap-2"><Chip tone={item.active ? 'green' : 'plain'}>{item.active ? 'Active' : 'Inactive'}</Chip>{item.popular && <Chip tone="yellow">Popular</Chip>}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {adminTab === 'subscriptions' && (
+          <>
+            <section className="record-card mb-stack-lg p-stack-md">
+              <SectionHeader title="Allocate Subscription" />
+              <form className="grid gap-stack-md md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); addSubscription(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
+                <SelectField name="businessCode" label="Business" options={businesses.map((business) => business.code)} />
+                <SelectField name="packageId" label="Package" options={packages.map((item) => item.id)} />
+                <TextField name="paymentReference" label="Payment Reference" placeholder="MPESA-123456" />
+                <button className="focus-ring flex h-14 items-center justify-center gap-2 rounded-xl bg-primary font-bold text-on-primary md:col-span-2"><Wallet size={20} /> Allocate Subscription</button>
+              </form>
+            </section>
+            <section>
+              <SectionHeader title="Subscription Logs" />
+              <div className="space-y-stack-sm">
+                {subscriptions.map((subscription) => {
+                  const item = packages.find((pkg) => pkg.id === subscription.packageId);
+                  return (
+                    <div key={subscription.id} className="record-card grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+                      <div>
+                        <h3 className="font-bold">{subscription.businessCode}</h3>
+                        <p className="text-sm text-on-surface-variant">{item?.name ?? subscription.packageId} - Ref {subscription.paymentReference}</p>
+                        <p className="text-xs font-bold text-on-surface-variant">Expires {subscription.expiresAt.slice(0, 10)}</p>
+                      </div>
+                      <Chip tone={subscription.status === 'Active' ? 'green' : 'yellow'}>{subscription.status}</Chip>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
         <section>
           <SectionHeader title="Module Payments" />
           <div className="space-y-stack-sm">
@@ -1626,7 +1989,7 @@ export default function App() {
     return <LoginGate mode={authMode} onTenantAuthenticated={() => setAuthMode('tenant_authenticated')} onAdminAuthenticated={() => setAuthMode('admin_authenticated')} />;
   }
   if (authMode === 'admin_authenticated') {
-    return <AdminConsole data={data} onLogout={() => setAuthMode('login')} />;
+    return <AdminConsole data={data} onLogout={() => setAuthMode('login')} onRefresh={() => setRefreshKey((key) => key + 1)} />;
   }
   return (
     <div className="min-h-screen bg-background pb-28 font-body text-on-background lg:pb-0">

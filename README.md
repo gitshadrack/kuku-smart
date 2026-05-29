@@ -27,6 +27,8 @@ New tenants start with Core only. Paid modules are activated from **Farm Setting
 
 Admins use the **Admin** tab on the login screen. The first admin creates an admin account with an Admin ID and password; returning admins log in with that Admin ID and password.
 
+The admin account opens a **Superadmin Module** where admins can create businesses, create SaaS-style packages, allocate subscriptions, record offline payment references, and deactivate/reactivate businesses.
+
 ## Build
 
 ```powershell
