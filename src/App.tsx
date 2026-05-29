@@ -10,6 +10,8 @@ import {
   ChevronRight,
   ClipboardCheck,
   Egg,
+  Eye,
+  EyeOff,
   HeartPulse,
   Home,
   ListPlus,
@@ -1192,6 +1194,9 @@ function AccountSettings({ onLogout }: { onLogout: () => void }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [message, setMessage] = useState('');
   const [tone, setTone] = useState<'green' | 'red'>('green');
   const [saving, setSaving] = useState(false);
@@ -1318,33 +1323,60 @@ function AccountSettings({ onLogout }: { onLogout: () => void }) {
         <div className="grid gap-stack-md md:grid-cols-3">
           <label className="flex flex-col gap-2 font-bold text-on-surface">
             Current password
-            <input
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              type="password"
-              autoComplete="current-password"
-              className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
+            <div className="relative">
+              <input
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                type={showCurrentPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                className="h-touch-target w-full rounded-lg border border-outline bg-white px-4 pr-12 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+              >
+                {showCurrentPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </label>
           <label className="flex flex-col gap-2 font-bold text-on-surface">
             New password
-            <input
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-              className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
+            <div className="relative">
+              <input
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                type={showNewPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                className="h-touch-target w-full rounded-lg border border-outline bg-white px-4 pr-12 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+              >
+                {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </label>
           <label className="flex flex-col gap-2 font-bold text-on-surface">
             Confirm password
-            <input
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-              className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
+            <div className="relative">
+              <input
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                className="h-touch-target w-full rounded-lg border border-outline bg-white px-4 pr-12 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+              >
+                {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </label>
           <button type="button" disabled={saving} onClick={changePassword} className="focus-ring flex h-14 items-center justify-center gap-2 rounded-xl border-2 border-primary font-bold text-primary disabled:opacity-60 md:col-span-3">
             <ShieldCheck size={20} /> {saving ? 'Updating...' : 'Update Password'}
@@ -1774,6 +1806,8 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const isAdmin = activeRole === 'admin';
   const adminExists = Boolean(getStoredAdminAuthRecord());
   const isSetup = isAdmin ? !adminExists : mode === 'setup';
@@ -2017,24 +2051,42 @@ function LoginGate({ mode, onTenantAuthenticated, onAdminAuthenticated }: { mode
         )}
         <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
           {recoveryMode ? 'New password' : 'Password'}
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            autoComplete={recoveryMode || isSetup ? 'new-password' : 'current-password'}
-            className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
+          <div className="relative">
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type={showPassword ? 'text' : 'password'}
+              autoComplete={recoveryMode || isSetup ? 'new-password' : 'current-password'}
+              className="h-touch-target w-full rounded-lg border border-outline bg-white px-4 pr-12 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+            >
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          </div>
         </label>
         {(isSetup || recoveryMode) && (
           <label className="mb-stack-md flex flex-col gap-2 font-bold text-on-surface">
             Confirm password
-            <input
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-              className="h-touch-target rounded-lg border border-outline bg-white px-4 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
+            <div className="relative">
+              <input
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                className="h-touch-target w-full rounded-lg border border-outline bg-white px-4 pr-12 font-normal outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+              >
+                {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </label>
         )}
         {!isSetup && (
