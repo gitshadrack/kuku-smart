@@ -21,13 +21,13 @@ export function useLiveFormState() {
   };
 }
 
-export function FormShell({ title, note, children, onSubmit, submitLabel, icon }: { title: string; note: string; children: ReactNode; onSubmit: (formData: FormData) => void; submitLabel: string; icon: JSX.Element }) {
+export function FormShell({ title, note, children, onSubmit, submitLabel, icon }: { title: string; note: string; children: ReactNode; onSubmit: (formData: FormData) => void | Promise<void>; submitLabel: string; icon: JSX.Element }) {
   const form = useLiveFormState();
   return (
     <LiveFormContext.Provider value={form}>
-      <form className="space-y-stack-md" onSubmit={(event) => {
+      <form className="space-y-stack-md" onSubmit={async (event) => {
         event.preventDefault();
-        onSubmit(new FormData(event.currentTarget));
+        await onSubmit(new FormData(event.currentTarget));
         form.reset();
       }}>
         <div className="mb-stack-lg">

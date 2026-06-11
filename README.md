@@ -48,5 +48,6 @@ npm.cmd run build
 
 ## Documentation
 
+- [MVP Handoff](MVP.md)
 - [Development to Shipping Guide](DEVELOPMENT_TO_SHIPPING.md)
 - [Design System](DESIGN.md)
