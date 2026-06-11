@@ -11,3 +11,7 @@ dist
 stats.html
 
 .eslintcache
+
+test-results/
+playwright-report/
+*.tsbuildinfo
